@@ -1,0 +1,23 @@
+# Railway (Nixpacks) build bosqichlari.
+#
+# Nega `npm install`, `npm ci` emas:
+#   Nixpacks node_modules'ni cache mount sifatida ulaydi. `npm ci` esa
+#   ishlashdan oldin node_modules'ni butunlay o'chiradi — mount qilingan
+#   katalogni esa o'chirib bo'lmaydi:
+#       npm error EBUSY: resource busy, rmdir '/app/node_modules'
+#   `npm install` katalogni o'chirmaydi va package-lock.json'ga baribir
+#   amal qiladi, shuning uchun natija bir xil.
+#
+# Nega `--include=dev`:
+#   Railway NODE_ENV=production qo'yadi va npm devDependencies'ni o'tkazib
+#   yuboradi. TypeScript esa devDependency — usiz `npm run build` ishlamaydi.
+#   (Logdagi "npm warn config production" ogohlantirishi aynan shu haqda.)
+
+[phases.install]
+cmds = ["npm install --include=dev --no-audit --no-fund"]
+
+[phases.build]
+cmds = ["npm run build"]
+
+[start]
+cmd = "node dist/index.js"

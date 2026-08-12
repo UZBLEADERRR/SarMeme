@@ -5,7 +5,7 @@
   "type": "module",
   "description": "Personal Solana memecoin analysis and paper-trading bot",
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "scripts": {
     "dev": "tsx watch src/index.ts",

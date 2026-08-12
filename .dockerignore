@@ -1,0 +1,15 @@
+# Build kontekstiga tushmasligi kerak bo'lgan narsalar.
+# node_modules'ni chiqarib tashlash muhim: aks holda lokal katalog image'ga
+# ko'chib, o'rnatish bosqichida to'qnashuv keltirib chiqaradi.
+node_modules
+dist
+
+# Sirlar hech qachon image ichiga tushmasin
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+*.log
+npm-debug.log*
