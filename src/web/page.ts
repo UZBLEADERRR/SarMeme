@@ -272,8 +272,8 @@ function render(d) {
 
   const simNote = d.simulate
     ? '<div class="note" style="background:#2a1420;color:#ffb3c8;border-color:#5c2029"><b>⚠️ SIMULYATSIYA REJIMI.</b> ' +
-      'Tokenlar, narxlar va likvidlik — sun\'iy. Filtr, ballchi, risk menejeri va chiqish qoidalari esa HAQIQIY kod. ' +
-      'Bu tizim qanday ishlashini ko\'rsatadi, lekin strategiya foydali yoki foydasizligini ISBOTLAMAYDI.</div>'
+      'Tokenlar, narxlar va likvidlik — sun\\'iy. Filtr, ballchi, risk menejeri va chiqish qoidalari esa HAQIQIY kod. ' +
+      'Bu tizim qanday ishlashini ko\\'rsatadi, lekin strategiya foydali yoki foydasizligini ISBOTLAMAYDI.</div>'
     : '';
 
   const demoNote = d.isDemo
