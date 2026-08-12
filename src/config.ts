@@ -1,66 +1,92 @@
 /**
- * Barcha sozlamalar shu yerda o'qiladi va tekshiriladi.
- * Muhim: majburiy o'zgaruvchi yo'q bo'lsa, bot ishga tushmaydi —
- * yarim sozlangan holda savdo qilishdan ko'ra darrov to'xtagan yaxshi.
+ * Sozlamalar.
+ *
+ * Tamoyil: MAJBURIY o'zgaruvchi YO'Q. Nima berilgan bo'lsa, o'sha ishlaydi;
+ * berilmagani o'rniga xavfsiz zaxira variant ishlatiladi. Shu tufayli botni
+ * hech narsa sozlamasdan ishga tushirib, UI'da nima qila olishini ko'rish mumkin.
+ *
+ *   Supabase yo'q   → xotiradagi baza (qayta ishga tushganda tozalanadi)
+ *   Gemini yo'q     → evristik ballchi (AI o'rniga formula)
+ *   Telegram yo'q   → xabarlar konsolga va UI'ga chiqadi
+ *   RPC yo'q        → zanjir tekshiruvi o'tkazib yuboriladi (yumshoq belgi)
+ *
+ * PumpPortal va DexScreener kalit talab qilmaydi, shuning uchun tokenlar
+ * oqimi va narxlar demo rejimda ham HAQIQIY bo'ladi.
  */
 
-function req(name: string): string {
+function opt(name: string): string | null {
   const v = process.env[name];
-  if (!v || v.trim() === '') {
-    throw new Error(`Muhit o'zgaruvchisi yetishmayapti: ${name} (.env.example ga qarang)`);
-  }
-  return v.trim();
+  if (!v) return null;
+  const t = v.trim();
+  // .env.example dan ko'chirilgan to'ldirilmagan qiymatlarni ham bo'sh deb hisoblaymiz
+  if (t === '' || t.startsWith('YOUR_') || t.includes('xxxxxxxxxxxx')) return null;
+  return t;
 }
 
 function num(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (raw === undefined || raw.trim() === '') return fallback;
+  const raw = opt(name);
+  if (raw === null) return fallback;
   const v = Number(raw);
-  if (!Number.isFinite(v)) throw new Error(`${name} raqam bo'lishi kerak, keldi: ${raw}`);
-  return v;
+  return Number.isFinite(v) ? v : fallback;
 }
 
 function str(name: string, fallback: string): string {
-  const raw = process.env[name];
-  return raw === undefined || raw.trim() === '' ? fallback : raw.trim();
+  return opt(name) ?? fallback;
 }
 
-const tradingMode = str('TRADING_MODE', 'paper');
-if (tradingMode !== 'paper' && tradingMode !== 'live') {
-  throw new Error(`TRADING_MODE 'paper' yoki 'live' bo'lishi kerak, keldi: ${tradingMode}`);
-}
+const supabaseUrl = opt('SUPABASE_URL');
+const supabaseKey = opt('SUPABASE_SERVICE_KEY');
+const geminiKey = opt('GEMINI_API_KEY');
+const telegramToken = opt('TELEGRAM_BOT_TOKEN');
+const telegramChat = opt('TELEGRAM_CHAT_ID');
+const rpcUrl = opt('SOLANA_RPC_URL');
+
+const hasSupabase = supabaseUrl !== null && supabaseKey !== null;
+const hasTelegram = telegramToken !== null && telegramChat !== null;
+
+const rawMode = str('TRADING_MODE', 'paper');
+const tradingMode: 'paper' | 'live' = rawMode === 'live' ? 'live' : 'paper';
+
+/** Sun'iy ma'lumot bilan namoyish rejimi. */
+const simulate = (opt('SIMULATE') ?? '').toLowerCase() === 'true';
 
 export const config = {
-  tradingMode: tradingMode as 'paper' | 'live',
+  tradingMode,
+  simulate,
   logLevel: str('LOG_LEVEL', 'info'),
 
-  supabase: {
-    url: req('SUPABASE_URL'),
-    serviceKey: req('SUPABASE_SERVICE_KEY'),
+  /** Nimalar mavjud — butun tizim shu bayroqlarga qarab moslashadi. */
+  capabilities: {
+    database: hasSupabase ? ('supabase' as const) : ('memory' as const),
+    ai: geminiKey ? ('gemini' as const) : ('heuristic' as const),
+    telegram: hasTelegram,
+    chain: rpcUrl !== null,
   },
 
-  rpc: {
-    url: req('SOLANA_RPC_URL'),
-    maxRps: num('RPC_MAX_RPS', 4),
+  /** Hech narsa sozlanmagan bo'lsa — to'liq demo. */
+  get isDemo(): boolean {
+    return !hasSupabase && !geminiKey && !hasTelegram;
   },
 
-  pumpportal: {
-    wsUrl: str('PUMPPORTAL_WS_URL', 'wss://pumpportal.fun/api/data'),
+  web: {
+    port: num('PORT', 3000),
+    /** Bo'sh bo'lsa dashboard ochiq. Railway'da qiymat berib qo'ying. */
+    token: opt('DASHBOARD_TOKEN'),
   },
+
+  supabase: { url: supabaseUrl, serviceKey: supabaseKey },
+  rpc: { url: rpcUrl, maxRps: num('RPC_MAX_RPS', 4) },
+  pumpportal: { wsUrl: str('PUMPPORTAL_WS_URL', 'wss://pumpportal.fun/api/data') },
 
   gemini: {
-    apiKey: req('GEMINI_API_KEY'),
+    apiKey: geminiKey,
     modelFast: str('GEMINI_MODEL_FAST', 'gemini-2.5-flash'),
     modelDeep: str('GEMINI_MODEL_DEEP', 'gemini-2.5-pro'),
     batchSize: num('AI_BATCH_SIZE', 15),
   },
 
-  telegram: {
-    botToken: req('TELEGRAM_BOT_TOKEN'),
-    chatId: req('TELEGRAM_CHAT_ID'),
-  },
+  telegram: { botToken: telegramToken, chatId: telegramChat },
 
-  /** Deterministik filtr chegaralari — AI bu qiymatlarga ta'sir qilmaydi. */
   filter: {
     minAgeMinutes: num('MIN_AGE_MINUTES', 5),
     maxAgeMinutes: num('MAX_AGE_MINUTES', 180),
@@ -71,7 +97,6 @@ export const config = {
     maxDevRugs: num('MAX_DEV_RUGS', 1),
   },
 
-  /** Qattiq risk limitlari. Bularni AI ham, prompt ham o'zgartira olmaydi. */
   risk: {
     bankrollSol: num('BANKROLL_SOL', 2),
     maxPositionPct: num('MAX_POSITION_PCT', 4),
@@ -84,16 +109,27 @@ export const config = {
     stopLossPct: num('STOP_LOSS_PCT', 25),
     takeProfitPct: num('TAKE_PROFIT_PCT', 60),
     trailingStopPct: num('TRAILING_STOP_PCT', 20),
-    maxHoldMinutes: num('MAX_HOLD_MINUTES', 240),
+    // Simulyatsiyada qisqa: vaqt bo'yicha chiqish qoidasi ham ko'rinsin
+    maxHoldMinutes: num('MAX_HOLD_MINUTES', simulate ? 5 : 240),
   },
 
   minAiScore: num('MIN_AI_SCORE', 70),
 
   ticks: {
-    screenMs: num('TICK_SCREEN_MS', 60_000),
-    aiMs: num('TICK_AI_MS', 900_000),
-    positionsMs: num('TICK_POSITIONS_MS', 30_000),
+    screenMs: num('TICK_SCREEN_MS', simulate ? 10_000 : 60_000),
+    aiMs: num('TICK_AI_MS', simulate ? 20_000 : 900_000),
+    positionsMs: num('TICK_POSITIONS_MS', simulate ? 10_000 : 30_000),
   },
-} as const;
+};
 
-export type Config = typeof config;
+/** Ishga tushganda ko'rsatiladigan holat matni. */
+export function capabilityReport(): string[] {
+  const c = config.capabilities;
+  return [
+    `Baza:     ${c.database === 'supabase' ? 'Supabase' : 'xotira (vaqtinchalik)'}`,
+    `AI:       ${c.ai === 'gemini' ? `Gemini (${config.gemini.modelFast})` : 'evristik ballchi'}`,
+    `Telegram: ${c.telegram ? 'ulangan' : "yo'q (xabarlar UI'da)"}`,
+    `Zanjir:   ${c.chain ? 'RPC ulangan' : "RPC yo'q (tekshiruv o'tkazib yuboriladi)"}`,
+    `Rejim:    ${config.simulate ? "SIMULYATSIYA (sun'iy ma'lumot)" : 'haqiqiy oqim'}`,
+  ];
+}

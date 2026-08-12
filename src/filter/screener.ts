@@ -1,8 +1,8 @@
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
-import { getHolderConcentration, getHolderCount, getMintInfo } from '../chain/rpc.js';
-import { getMarketSnapshots } from '../market/dexscreener.js';
-import { getDev } from '../db/repo.js';
+import { UNKNOWN_CHAIN, inspectChain } from '../chain/provider.js';
+import { fetchMarkets } from '../market/prices.js';
+import { getStore } from '../store/index.js';
 import type { ChainSnapshot, ScreenResult } from '../types.js';
 
 const log = createLogger('screener');
@@ -25,7 +25,7 @@ export async function screen(candidates: readonly Candidate[]): Promise<ScreenRe
   if (candidates.length === 0) return [];
 
   // Bozor ma'lumotini guruh bilan olamiz — bitta so'rovda 30 tagacha token.
-  const markets = await getMarketSnapshots(candidates.map((c) => c.mint));
+  const markets = await fetchMarkets(candidates.map((c) => c.mint));
   const results: ScreenResult[] = [];
 
   for (const c of candidates) {
@@ -42,7 +42,7 @@ export async function screen(candidates: readonly Candidate[]): Promise<ScreenRe
         flags: ['no_market_data'],
         ageMinutes,
         market: market ?? emptyMarket(),
-        chain: emptyChain(),
+        chain: UNKNOWN_CHAIN,
         dev: null,
       });
       continue;
@@ -59,14 +59,14 @@ export async function screen(candidates: readonly Candidate[]): Promise<ScreenRe
         flags,
         ageMinutes,
         market,
-        chain: emptyChain(),
+        chain: UNKNOWN_CHAIN,
         dev: null,
       });
       continue;
     }
 
     // 3) Dev reputatsiyasi — bepul, o'z bazamizdan.
-    const dev = c.creator ? await getDev(c.creator) : null;
+    const dev = c.creator ? await getStore().getDev(c.creator) : null;
     if (dev && dev.rugs > config.filter.maxDevRugs) {
       results.push({
         mint: c.mint,
@@ -74,7 +74,7 @@ export async function screen(candidates: readonly Candidate[]): Promise<ScreenRe
         flags: [`dev_rugs_${dev.rugs}`],
         ageMinutes,
         market,
-        chain: emptyChain(),
+        chain: UNKNOWN_CHAIN,
         dev,
       });
       continue;
@@ -124,34 +124,6 @@ export async function screen(candidates: readonly Candidate[]): Promise<ScreenRe
   const passed = results.filter((r) => r.passed).length;
   log.info('skrining tugadi', { tekshirildi: results.length, otdi: passed });
   return results;
-}
-
-async function inspectChain(mint: string): Promise<ChainSnapshot> {
-  const info = await getMintInfo(mint);
-  if (!info) return emptyChain();
-
-  const conc = await getHolderConcentration(mint, info.supply);
-  const holderCount = await getHolderCount(mint);
-
-  return {
-    mintAuthorityPresent: info.mintAuthorityPresent,
-    freezeAuthorityPresent: info.freezeAuthorityPresent,
-    decimals: info.decimals,
-    supply: info.supply,
-    holderCount,
-    top10Pct: conc.top10Pct,
-  };
-}
-
-function emptyChain(): ChainSnapshot {
-  return {
-    mintAuthorityPresent: null,
-    freezeAuthorityPresent: null,
-    decimals: null,
-    supply: null,
-    holderCount: null,
-    top10Pct: null,
-  };
 }
 
 function emptyMarket() {

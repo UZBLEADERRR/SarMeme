@@ -2,7 +2,39 @@
 
 Solana memcoin tokenlarini avtomatik tahlil qiluvchi va **virtual savdo** qiluvchi shaxsiy bot.
 
-Butun stack bepul yoki deyarli bepul xizmatlarda ishlaydi — taxminan **$5/oy** (faqat Railway).
+Bepul xizmatlarda ishlaydi — taxminan **$5/oy** (faqat Railway).
+
+---
+
+## Darrov ko'rish
+
+Hech narsa sozlamasdan:
+
+```bash
+npm install
+SIMULATE=true npm run dev
+```
+
+Brauzerda **http://localhost:3000** oching. Bir-ikki daqiqada dashboard to'ladi: tokenlar oqimi, filtr natijalari, ballar, ochilgan pozitsiyalar, chiqishlar va PnL.
+
+`SIMULATE=true` sun'iy tokenlar yaratadi va ularni **haqiqiy quvurdan** o'tkazadi — haqiqiy filtr, haqiqiy ballchi, haqiqiy risk menejeri, haqiqiy chiqish qoidalari. Faqat ma'lumot o'ylab topilgan. Bu tizim qanday ishlashini ko'rsatadi, lekin strategiya foydali ekanini **isbotlamaydi**.
+
+Simulyatorsiz (`npm run dev`) bot haqiqiy PumpPortal oqimiga ulanadi — bu ham kalitsiz ishlaydi, lekin ma'lumot to'planishi sekinroq.
+
+---
+
+## Majburiy o'zgaruvchi yo'q
+
+Nima berilmagan bo'lsa, o'rniga xavfsiz zaxira ishlatiladi:
+
+| Yo'q bo'lsa | Nima bo'ladi |
+|---|---|
+| `SUPABASE_*` | Xotiradagi baza — ishlaydi, lekin qayta ishga tushganda tozalanadi |
+| `GEMINI_API_KEY` | Evristik ballchi — ochiq formula (`src/ai/heuristic.ts`), narrativni tushunmaydi |
+| `TELEGRAM_*` | Xabarlar dashboard va logda ko'rinadi |
+| `SOLANA_RPC_URL` | Zanjir tekshiruvi o'tkazib yuboriladi, ball pasaytiriladi |
+
+Dashboard yuqorisidagi belgilar nima ulangani va nima yo'qligini doim ko'rsatib turadi.
 
 ---
 
@@ -12,16 +44,14 @@ Butun stack bepul yoki deyarli bepul xizmatlarda ishlaydi — taxminan **$5/oy**
 
 Til modeli hech qachon savdo qilmaydi. U faqat ball qo'yadi. Kirish-chiqish, pozitsiya hajmi va barcha risk limitlari qattiq kodda — `src/risk/manager.ts` va `src/trade/paper.ts` da.
 
-Uchta qatlam:
-
 ```
 1) DETERMINISTIK FILTR  (src/filter/screener.ts)    — AI yo'q, tez, arzon
    PumpPortal oqimi → mint/freeze authority, likvidlik, hajm,
-   top-10 xolder ulushi, dev reputatsiyasi → ~99% tokenni rad etadi
+   top-10 xolder ulushi, dev reputatsiyasi → ~90% tokenni rad etadi
                               ↓
-2) AI TAHLIL  (src/ai/analyst.ts)                   — Gemini, guruh bilan
-   Faqat filtrdan o'tganlar. 15 ta token = 1 ta so'rov.
-   Strukturaviy JSON: {score, verdict, red_flags, narrative}
+2) BAHOLASH  (src/ai/analyst.ts | src/ai/heuristic.ts)
+   Faqat filtrdan o'tganlar. Gemini bo'lsa: 15 ta token = 1 ta so'rov,
+   strukturaviy JSON. Bo'lmasa: ochiq formulali evristika.
                               ↓
 3) DETERMINISTIK IJRO  (src/risk + src/trade)       — AI aralashmaydi
    Risk tekshiruvi → pozitsiya hajmi formulasi → virtual kirish
@@ -38,7 +68,7 @@ Uchta qatlam:
 
 Virtual savdoda har kirish va chiqishga **1% komissiya + 2% slippage** jarimasi qo'llanadi, shuning uchun natija haqiqiydan chiroyliroq ko'rinmaydi.
 
-**Kamida 3–4 hafta shu rejimda ishlating.** Agar shu davrda minusda bo'lsa — real pul bilan ham minusda bo'lasiz, faqat tezroq. Real savdoni yoqishdan oldingi to'liq talablar ro'yxati `src/trade/live.ts` da.
+**Kamida 3–4 hafta haqiqiy oqimda paper rejimda ishlating.** Agar shu davrda minusda bo'lsa — real pul bilan ham minusda bo'lasiz, faqat tezroq. To'liq talablar ro'yxati `src/trade/live.ts` da.
 
 ---
 
@@ -50,13 +80,15 @@ Shuning uchun bot **token tug'ilgandan 5–180 daqiqa keyin** qaraydi (`MIN_AGE_
 
 ---
 
-## O'rnatish
+## To'liq sozlash
 
-### 1. Supabase (bepul)
+### 1. Supabase (bepul) — doimiy saqlash uchun
 
-1. [supabase.com](https://supabase.com) da yangi loyiha oching
-2. **SQL Editor** → `supabase/schema.sql` faylini to'liq nusxalab ishga tushiring
-3. **Project Settings → API** dan `URL` va `service_role` kalitini oling
+1. [supabase.com](https://supabase.com) da loyiha oching
+2. **SQL Editor** → `supabase/schema.sql` ni to'liq ishga tushiring
+3. **Project Settings → API** dan `URL` va `service_role` kalitini `.env` ga qo'ying
+
+> **Xavfsizlik:** sxemada RLS yoqilmagan. Faqat `service_role` kaliti ishlatilsa muammo yo'q, lekin `anon` kaliti sizib chiqsa har kim ma'lumotni o'zgartira oladi. Tavsiya: RLS'ni yoqing (siyosatsiz) — `service_role` uni chetlab o'tadi, boshqa hamma bloklanadi. SQL `supabase/schema.sql` oxirida.
 
 ### 2. Kalitlar
 
@@ -65,43 +97,43 @@ Shuning uchun bot **token tug'ilgandan 5–180 daqiqa keyin** qaraydi (`MIN_AGE_
 | Helius RPC | [helius.dev](https://helius.dev) → free tier | Bepul |
 | Gemini API | [aistudio.google.com/apikey](https://aistudio.google.com/apikey) | Bepul tarif |
 | Telegram bot | [@BotFather](https://t.me/BotFather) → `/newbot` | Bepul |
-| Telegram chat ID | [@userinfobot](https://t.me/userinfobot) ga yozing | Bepul |
-| PumpPortal | Kalit kerak emas | Bepul |
-| DexScreener | Kalit kerak emas | Bepul |
+| Telegram chat ID | [@userinfobot](https://t.me/userinfobot) | Bepul |
+| PumpPortal · DexScreener | Kalit kerak emas | Bepul |
 
-### 3. Lokal ishga tushirish
-
-```bash
-npm install
-cp .env.example .env     # keyin .env ni to'ldiring
-npm run dev
-```
-
-Telegram'da botingizga `/status` yozing — javob kelsa, hammasi ishlayapti.
-
-### 4. Railway'ga deploy
+### 3. Railway'ga deploy
 
 1. Repo'ni GitHub'ga push qiling
 2. Railway → **New Project → Deploy from GitHub repo**
-3. **Variables** bo'limiga `.env` dagi barcha o'zgaruvchilarni qo'shing
-4. Deploy avtomatik boshlanadi (`railway.json` allaqachon sozlangan)
+3. **Variables** ga `.env` dagi o'zgaruvchilarni qo'shing
+4. **`DASHBOARD_TOKEN` ni albatta qo'ying** — Railway URL ochiq bo'ladi
 
-> **Bitta servis ishlating.** Postgres'ni Railway'da emas, Supabase'da (bepul) ushlang — aks holda oylik kredit tezroq tugaydi.
+Dashboard: `https://sizning-app.railway.app/?token=SIZNING_TOKEN`
+
+> Bitta servis ishlating. Postgres'ni Railway'da emas, Supabase'da (bepul) ushlang.
+
+---
+
+## Dashboard
+
+| Panel | Nima ko'rsatadi |
+|---|---|
+| Quvur | Voronka: ko'rildi → filtrdan o'tdi → baholandi → kirildi |
+| Ochiq pozitsiyalar | Joriy foyda/zarar, ball, qancha vaqt ochiq |
+| Baholar | Ball, hukm, sabab, aniqlangan xavf belgilari |
+| Skrining natijalari | Har token nega o'tdi yoki nega rad etildi |
+| Tokenlar oqimi | Real vaqtda kelayotgan yangi tokenlar |
+| Yopilgan savdolar | PnL va chiqish sababi |
+| Dev reputatsiyasi | Kim necha token chiqargan, nechtasi rug bo'lgan |
+
+Yuqoridagi **⏹ To'xtatish** tugmasi — kill switch. Bosilganda yangi pozitsiya ochilmaydi.
 
 ---
 
 ## Telegram buyruqlari
 
-| Buyruq | Nima qiladi |
-|---|---|
-| `/status` | Rejim, kill switch, ochiq pozitsiyalar, kunlik PnL |
-| `/positions` | Ochiq pozitsiyalar va joriy foyda/zarari |
-| `/pnl` | Bugungi, 7 kunlik va umumiy natija |
-| `/token <mint>` | Token bo'yicha oxirgi tekshiruv natijasi |
-| `/kill` | 🛑 Darhol to'xtatish — yangi pozitsiya ochilmaydi |
-| `/resume` | Kill switch'ni o'chirish |
+`/status` · `/positions` · `/pnl` · `/token <mint>` · `/kill` · `/resume`
 
-Buyruqlar faqat `TELEGRAM_CHAT_ID` da ko'rsatilgan chatdan qabul qilinadi.
+Faqat `TELEGRAM_CHAT_ID` da ko'rsatilgan chatdan qabul qilinadi.
 
 ---
 
@@ -118,7 +150,7 @@ Barcha limitlar `src/risk/manager.ts` da majburlanadi. AI ham, prompt ham ularni
 | `MAX_TRADES_PER_HOUR` | Runaway loop himoyasi | 10 |
 | `MIN_AI_SCORE` | Bundan past ballda kirilmaydi | 70 |
 
-Chiqish qoidalari: `STOP_LOSS_PCT` (25%), `TAKE_PROFIT_PCT` (60%), `TRAILING_STOP_PCT` (20%), `MAX_HOLD_MINUTES` (240). Likvidlik butunlay yo'qolsa — to'liq zarar deb yoziladi.
+Chiqish: `STOP_LOSS_PCT` (25%), `TAKE_PROFIT_PCT` (60%), `TRAILING_STOP_PCT` (20%), `MAX_HOLD_MINUTES` (240). Likvidlik butunlay yo'qolsa — to'liq zarar deb yoziladi.
 
 Real savdoga o'tganda: **asosiy kapitalning faqat 5–10%ini alohida koshelyokda ushlang.**
 
@@ -126,12 +158,11 @@ Real savdoga o'tganda: **asosiy kapitalning faqat 5–10%ini alohida koshelyokda
 
 ## Bepul limitlarni asrash
 
-Loyiha bepul tariflarda ishlashi uchun ataylab tejamkor:
-
-- **Gemini** — tokenlar guruh bilan (`AI_BATCH_SIZE=15`) bitta so'rovda yuboriladi. 200 ta so'rov o'rniga ~4 ta. 429 xatosida uzunroq kutib qayta uriniladi.
-- **RPC** — token-bucket cheklagich (`RPC_MAX_RPS=4`). Zanjir tekshiruvi faqat arzon bozor filtridan o'tganlar uchun bajariladi.
+- **Gemini** — tokenlar guruh bilan (`AI_BATCH_SIZE=15`) bitta so'rovda. 429 xatosida uzunroq kutib qayta uriniladi.
+- **RPC** — token-bucket cheklagich. Zanjir tekshiruvi faqat arzon bozor filtridan o'tganlar uchun.
 - **DexScreener** — bir so'rovda 30 tagacha token, 3 so'rov/soniya.
-- **Sikllar bir-birining ustiga chiqmaydi** — oldingi ish tugamasa, yangisi o'tkazib yuboriladi.
+- **Dashboard** — narxlar 20 soniya keshlanadi.
+- **Sikllar** bir-birining ustiga chiqmaydi.
 
 ---
 
@@ -140,33 +171,33 @@ Loyiha bepul tariflarda ishlashi uchun ataylab tejamkor:
 ```
 src/
 ├── index.ts              Ishga tushirish, sikllar, graceful shutdown
-├── env.ts                .env yuklash (config'dan oldin import qilinadi)
-├── config.ts             Barcha sozlamalar + tekshiruv
+├── config.ts             Sozlamalar — majburiy o'zgaruvchi yo'q
+├── notify.ts             Bildirishnomalar (UI + Telegram)
 ├── ingest/pumpportal.ts  WebSocket oqimi (reconnect + heartbeat)
-├── market/dexscreener.ts Narx/likvidlik (guruh so'rovlari)
-├── chain/rpc.ts          Mint authority, xolder konsentratsiyasi
+├── market/               DexScreener + almashtiriladigan narx manbai
+├── chain/                RPC + almashtiriladigan zanjir manbai
 ├── filter/screener.ts    ⭐ Deterministik filtr — AI yo'q
-├── ai/gemini.ts          Gemini REST mijozi (strukturaviy JSON)
-├── ai/analyst.ts         Guruh tahlili, prompt va sxema
+├── ai/analyst.ts         Gemini guruh tahlili
+├── ai/heuristic.ts       Zaxira ballchi — ochiq formula
 ├── risk/manager.ts       ⭐ Qattiq limitlar, kill switch
 ├── trade/paper.ts        Virtual savdo + chiqish qoidalari
 ├── trade/live.ts         Real savdo — ataylab bloklangan
-├── pipeline/loops.ts     Sikllar: skrining → AI → pozitsiya → natija
-├── telegram/bot.ts       Buyruqlar va bildirishnomalar
-└── db/                   Supabase mijozi va so'rovlar
+├── pipeline/loops.ts     Skrining → baholash → pozitsiya → natija
+├── store/                Supabase yoki xotira — bir xil interfeys
+├── web/                  Dashboard (HTTP server + sahifa)
+├── demo/simulator.ts     Sun'iy ma'lumot, haqiqiy quvur
+└── telegram/bot.ts       Buyruqlar
 ```
 
 ---
 
 ## Ma'lum cheklovlar
 
-Bular ataylab ochiq qoldirilgan — keyingi bosqichda yaxshilanadi:
-
-- **Top-10 xolder hisobi evristik.** Bonding curve / bassein hisobini ajratish uchun 50%dan ko'p ushlagan eng yirik bitta hisob chiqarib tashlanadi (`src/chain/rpc.ts`). Aniqroq usul — hisob egasini (`owner`) tekshirish.
-- **Xolderlar soni Helius'ga bog'liq.** `getTokenAccounts` boshqa provayderda yo'q; u holda `null` qaytadi va filtr buni yumshoq belgi sifatida qabul qiladi.
-- **Funding graf hali yo'q.** Dev reputatsiyasi bor, lekin koshelyoklarni bitta manbaga bog'lovchi graf keyingi bosqichda.
+- **Top-10 xolder hisobi evristik.** Bonding curve / bassein hisobini ajratish uchun 50%dan ko'p ushlagan eng yirik hisob chiqarib tashlanadi. Aniqroq usul — hisob egasini tekshirish.
+- **Xolderlar soni Helius'ga bog'liq.** Boshqa provayderda `null` qaytadi (yumshoq belgi).
+- **Funding graf hali yo'q.** Dev reputatsiyasi bor, koshelyoklarni bitta manbaga bog'lovchi graf keyingi bosqichda.
 - **Narrativ agenti hali yo'q.** Gemini'ning Google Search grounding funksiyasi bilan qo'shiladi.
-- **Haftalik o'z-o'zini tahlil hali yo'q.** Jurnal (`journal` jadvali) allaqachon to'lib boradi — tahlil shundan o'qiydi.
+- **Haftalik o'z-o'zini tahlil hali yo'q.** Jurnal to'lib boradi — tahlil shundan o'qiydi.
 
 ---
 
@@ -174,4 +205,4 @@ Bular ataylab ochiq qoldirilgan — keyingi bosqichda yaxshilanadi:
 
 Bu dasturiy ta'minot **shaxsiy foydalanish va o'rganish uchun**. Moliyaviy maslahat emas.
 
-Memcoin savdosi o'ta yuqori riskli — foydalanuvchilarning katta qismi pul yo'qotadi, hatto yaxshi tizim bilan ham. Yo'qotishga tayyor bo'lmagan pulni ishlatmang. Real savdoni yoqishdan oldin `src/trade/live.ts` dagi to'liq ro'yxatni o'qing.
+Memcoin savdosi o'ta yuqori riskli — foydalanuvchilarning katta qismi pul yo'qotadi, hatto yaxshi tizim bilan ham. Yo'qotishga tayyor bo'lmagan pulni ishlatmang.

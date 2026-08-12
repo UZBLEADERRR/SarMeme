@@ -1,14 +1,6 @@
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
-import {
-  getState,
-  hasPositionFor,
-  journal,
-  listOpenPositions,
-  pnlSince,
-  setState,
-  tradesOpenedSince,
-} from '../db/repo.js';
+import { getStore } from '../store/index.js';
 
 const log = createLogger('risk');
 
@@ -25,16 +17,16 @@ function startOfUtcDay(): Date {
 }
 
 export async function isKillSwitchOn(): Promise<boolean> {
-  const s = await getState<{ enabled: boolean; reason?: string }>('kill_switch', {
+  const s = await getStore().getState<{ enabled: boolean; reason?: string }>('kill_switch', {
     enabled: false,
   });
   return s.enabled === true;
 }
 
 export async function setKillSwitch(enabled: boolean, reason: string): Promise<void> {
-  await setState('kill_switch', { enabled, reason, at: new Date().toISOString() });
+  await getStore().setState('kill_switch', { enabled, reason, at: new Date().toISOString() });
   log.warn(enabled ? 'KILL SWITCH YOQILDI' : 'kill switch o\'chirildi', { reason });
-  await journal({ note: enabled ? `Kill switch yoqildi: ${reason}` : `Kill switch o'chirildi: ${reason}` });
+  await getStore().journal({ note: enabled ? `Kill switch yoqildi: ${reason}` : `Kill switch o'chirildi: ${reason}` });
 }
 
 export interface RiskSnapshot {
@@ -47,9 +39,9 @@ export interface RiskSnapshot {
 }
 
 export async function snapshot(): Promise<RiskSnapshot> {
-  const open = await listOpenPositions();
-  const day = await pnlSince(startOfUtcDay());
-  const hour = await tradesOpenedSince(new Date(Date.now() - 3_600_000));
+  const open = await getStore().listOpenPositions();
+  const day = await getStore().pnlSince(startOfUtcDay());
+  const hour = await getStore().tradesOpenedSince(new Date(Date.now() - 3_600_000));
 
   return {
     killSwitch: await isKillSwitchOn(),
@@ -100,7 +92,7 @@ export async function evaluateEntry(mint: string, aiScore: number): Promise<Risk
     return deny('kunlik zarar limitiga yetildi');
   }
 
-  if (await hasPositionFor(mint)) {
+  if (await getStore().hasPositionFor(mint)) {
     return deny('bu tokenda allaqachon pozitsiya bo\'lgan');
   }
 

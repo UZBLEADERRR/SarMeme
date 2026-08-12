@@ -15,12 +15,20 @@ let idCounter = 0;
 
 export class RpcMethodUnavailable extends Error {}
 
+export class RpcNotConfigured extends Error {}
+
+export function hasRpc(): boolean {
+  return config.rpc.url !== null;
+}
+
 export async function rpc<T>(method: string, params: unknown[]): Promise<T> {
+  const url = config.rpc.url;
+  if (url === null) throw new RpcNotConfigured('SOLANA_RPC_URL sozlanmagan');
   await limiter.acquire();
 
   const body = JSON.stringify({ jsonrpc: '2.0', id: ++idCounter, method, params });
   const res = await fetchJson<{ result?: T; error?: { code: number; message: string } }>(
-    config.rpc.url,
+    url,
     { method: 'POST', headers: { 'content-type': 'application/json' }, body },
     { attempts: 2, timeoutMs: 20_000 },
   );
@@ -63,6 +71,7 @@ interface ParsedMintAccount {
  * aks holda dev supply chiqara oladi yoki koshelyoklarni muzlata oladi.
  */
 export async function getMintInfo(mint: string): Promise<MintInfo | null> {
+  if (!hasRpc()) return null;
   try {
     const res = await rpc<ParsedMintAccount>('getAccountInfo', [
       mint,
@@ -118,7 +127,7 @@ export async function getHolderConcentration(
     top10PctRaw: null,
     poolLikelyExcluded: false,
   };
-  if (!Number.isFinite(supply) || supply <= 0) return empty;
+  if (!hasRpc() || !Number.isFinite(supply) || supply <= 0) return empty;
 
   try {
     const res = await rpc<LargestAccounts>('getTokenLargestAccounts', [
@@ -165,6 +174,7 @@ interface HeliusTokenAccounts {
  * deb yumshoq belgi sifatida qabul qiladi (qattiq rad etmaydi).
  */
 export async function getHolderCount(mint: string): Promise<number | null> {
+  if (!hasRpc()) return null;
   try {
     const res = await rpc<HeliusTokenAccounts>('getTokenAccounts', [
       { mint, limit: 1000, options: { showZeroBalance: false } },
@@ -172,7 +182,7 @@ export async function getHolderCount(mint: string): Promise<number | null> {
     if (typeof res.total === 'number') return res.total;
     return res.token_accounts?.length ?? null;
   } catch (err) {
-    if (err instanceof RpcMethodUnavailable) return null;
+    if (err instanceof RpcMethodUnavailable || err instanceof RpcNotConfigured) return null;
     log.debug('getHolderCount muvaffaqiyatsiz', { mint, error: String(err) });
     return null;
   }

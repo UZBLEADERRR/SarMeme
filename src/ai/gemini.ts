@@ -49,6 +49,9 @@ export interface GenerateOptions {
  * Bepul tarifda 429 (rate limit) normal hodisa: uzunroq kutib qayta urinamiz.
  */
 export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
+  const apiKey = config.gemini.apiKey;
+  if (apiKey === null) throw new Error('GEMINI_API_KEY sozlanmagan');
+
   const url = `${BASE}/models/${opts.model}:generateContent`;
   const body = JSON.stringify({
     systemInstruction: { parts: [{ text: opts.system }] },
@@ -70,7 +73,7 @@ export async function generateJson<T>(opts: GenerateOptions): Promise<T> {
         method: 'POST',
         headers: {
           'content-type': 'application/json',
-          'x-goog-api-key': config.gemini.apiKey,
+          'x-goog-api-key': apiKey,
         },
         body,
         signal: AbortSignal.timeout(90_000),

@@ -118,3 +118,26 @@ create table if not exists bot_state (
 
 insert into bot_state (key, value) values ('kill_switch', '{"enabled": false}'::jsonb)
   on conflict (key) do nothing;
+
+-- ── XAVFSIZLIK: Row Level Security ──────────────────────────────────────────
+--
+-- Yuqoridagi jadvallarda RLS yoqilmagan. Bu shuni anglatadiki, `anon` kaliti
+-- (u ochiq kalit — brauzerga chiqadi) bilan HAR KIM barcha qatorlarni o'qiy
+-- va o'zgartira oladi.
+--
+-- Bu bot faqat `service_role` kaliti bilan ishlaydi, `service_role` esa RLS'ni
+-- chetlab o'tadi. Shuning uchun RLS'ni SIYOSATSIZ yoqish bu loyiha uchun
+-- IDEAL: bot ishlashda davom etadi, tashqaridan hech kim tegolmaydi.
+--
+-- Quyidagini ishga tushirishni tavsiya qilamiz (kommentni oching):
+
+-- alter table public.devs         enable row level security;
+-- alter table public.tokens       enable row level security;
+-- alter table public.token_checks enable row level security;
+-- alter table public.analyses     enable row level security;
+-- alter table public.positions    enable row level security;
+-- alter table public.journal      enable row level security;
+-- alter table public.bot_state    enable row level security;
+
+-- Diqqat: agar kelajakda brauzerdan `anon` kaliti bilan o'qimoqchi bo'lsangiz,
+-- avval mos `create policy` yozing — aks holda so'rovlar bloklanadi.

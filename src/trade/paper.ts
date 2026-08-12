@@ -1,14 +1,7 @@
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
-import { getMarketSnapshots } from '../market/dexscreener.js';
-import {
-  closePosition,
-  journal,
-  listOpenPositions,
-  openPosition,
-  setTokenStatus,
-  updatePeak,
-} from '../db/repo.js';
+import { fetchMarkets } from '../market/prices.js';
+import { getStore } from '../store/index.js';
 import type { Position } from '../types.js';
 
 const log = createLogger('paper');
@@ -49,7 +42,7 @@ export interface ExitEvent {
  * Narx yo'q bo'lsa kirmaymiz — noma'lum narxda pozitsiya ochish xato.
  */
 export async function enter(req: EntryRequest): Promise<Position | null> {
-  const markets = await getMarketSnapshots([req.mint]);
+  const markets = await fetchMarkets([req.mint]);
   const price = markets.get(req.mint)?.priceNativeSol ?? null;
 
   if (price === null || price <= 0) {
@@ -61,7 +54,7 @@ export async function enter(req: EntryRequest): Promise<Position | null> {
   const effectivePrice = price * (1 + ROUNDTRIP_COST / 2);
   const qty = req.sizeSol / effectivePrice;
 
-  const pos = await openPosition({
+  const pos = await getStore().openPosition({
     mint: req.mint,
     symbol: req.symbol,
     mode: 'paper',
@@ -71,8 +64,8 @@ export async function enter(req: EntryRequest): Promise<Position | null> {
     qty,
   });
 
-  await setTokenStatus(req.mint, 'traded', `paper kirish, ball ${req.score}`);
-  await journal({
+  await getStore().setTokenStatus(req.mint, 'traded', `paper kirish, ball ${req.score}`);
+  await getStore().journal({
     positionId: pos.id,
     mint: req.mint,
     note: `KIRISH ${req.symbol ?? req.mint.slice(0, 8)} — ${req.sizeSol.toFixed(4)} SOL, ball ${req.score}`,
@@ -125,10 +118,10 @@ function decideExit(
  * Yopilgan pozitsiyalar ro'yxatini qaytaradi (Telegram xabari uchun).
  */
 export async function manageOpenPositions(): Promise<ExitEvent[]> {
-  const open = await listOpenPositions();
+  const open = await getStore().listOpenPositions();
   if (open.length === 0) return [];
 
-  const markets = await getMarketSnapshots(open.map((p) => p.mint));
+  const markets = await fetchMarkets(open.map((p) => p.mint));
   const exits: ExitEvent[] = [];
 
   for (const pos of open) {
@@ -140,8 +133,8 @@ export async function manageOpenPositions(): Promise<ExitEvent[]> {
       if (heldMinutes < 5) continue; // vaqtinchalik API uzilishi bo'lishi mumkin
 
       const pnlSol = -pos.solIn;
-      await closePosition(pos.id, 0, 0, 'likvidlik yo\'qoldi (rug)', pnlSol, -100);
-      await journal({
+      await getStore().closePosition(pos.id, 0, 0, 'likvidlik yo\'qoldi (rug)', pnlSol, -100);
+      await getStore().journal({
         positionId: pos.id,
         mint: pos.mint,
         note: `CHIQISH ${pos.symbol ?? pos.mint.slice(0, 8)} — likvidlik yo'qoldi, -${pos.solIn.toFixed(4)} SOL`,
@@ -157,7 +150,7 @@ export async function manageOpenPositions(): Promise<ExitEvent[]> {
     }
 
     const peak = Math.max(pos.peakPrice ?? pos.entryPrice, price);
-    if (peak > (pos.peakPrice ?? 0)) await updatePeak(pos.id, peak);
+    if (peak > (pos.peakPrice ?? 0)) await getStore().updatePeak(pos.id, peak);
 
     const { exit, reason } = decideExit(pos, price, peak);
     if (!exit) continue;
@@ -168,8 +161,8 @@ export async function manageOpenPositions(): Promise<ExitEvent[]> {
     const pnlSol = solOut - pos.solIn;
     const pnlPct = (pnlSol / pos.solIn) * 100;
 
-    await closePosition(pos.id, effectivePrice, solOut, reason, pnlSol, pnlPct);
-    await journal({
+    await getStore().closePosition(pos.id, effectivePrice, solOut, reason, pnlSol, pnlPct);
+    await getStore().journal({
       positionId: pos.id,
       mint: pos.mint,
       note: `CHIQISH ${pos.symbol ?? pos.mint.slice(0, 8)} — ${reason}, ${pnlSol >= 0 ? '+' : ''}${pnlSol.toFixed(4)} SOL (${pnlPct.toFixed(1)}%)`,

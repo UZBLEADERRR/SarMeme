@@ -1,13 +1,15 @@
 import './env.js'; // config'dan OLDIN turishi shart — .env ni yuklaydi
-import { config } from './config.js';
+import { capabilityReport, config } from './config.js';
 import { createLogger } from './logger.js';
+import { startWebServer } from './web/server.js';
 import { PumpPortalStream } from './ingest/pumpportal.js';
-import { TelegramBot, notify } from './telegram/bot.js';
-import { insertToken, setTokenStatus } from './db/repo.js';
-import { db } from './db/client.js';
+import { TelegramBot } from './telegram/bot.js';
+import { notify } from './notify.js';
+import { getStore, initStore } from './store/index.js';
 import { aiTick, outcomeTick, positionsTick, screenTick } from './pipeline/loops.js';
 import { isKillSwitchOn } from './risk/manager.js';
 import { assertLiveTradingNotEnabled } from './trade/live.js';
+import { startSimulator } from './demo/simulator.js';
 
 const log = createLogger('main');
 
@@ -40,43 +42,46 @@ function everyMs(name: string, ms: number, fn: () => Promise<void>): NodeJS.Time
   return setInterval(() => void run(), ms);
 }
 
-async function checkDatabase(): Promise<void> {
-  const res = await db.from('bot_state').select('key').limit(1);
-  if (res.error) {
-    throw new Error(
-      `Supabase'ga ulanib bo'lmadi yoki sxema yo'q: ${res.error.message}\n` +
-        'supabase/schema.sql ni SQL Editor da ishga tushirganingizni tekshiring.',
-    );
-  }
-}
-
 async function main(): Promise<void> {
-  log.info('SarMeme ishga tushmoqda', {
-    mode: config.tradingMode,
-    bankrollSol: config.risk.bankrollSol,
-  });
+  log.info('SarMeme ishga tushmoqda');
+  for (const line of capabilityReport()) log.info('  ' + line);
+  if (config.isDemo) {
+    log.warn('DEMO REJIM — hech narsa sozlanmagan. Dashboard ishlaydi, ma\'lumot vaqtinchalik.');
+  }
 
   // Live rejim ataylab bloklangan — src/trade/live.ts ga qarang.
   if (config.tradingMode === 'live') assertLiveTradingNotEnabled();
 
-  await checkDatabase();
-  log.info('baza ulandi');
+  await initStore();
+
+  // Dashboard birinchi ishga tushadi: qolgan qismi yiqilsa ham
+  // brauzerda holatni ko'rish imkoni qoladi.
+  startWebServer();
 
   const bot = new TelegramBot();
   bot.start();
 
+  // Simulyatsiya yoqilgan bo'lsa haqiqiy oqimga ulanmaymiz — sun'iy tokenlar
+  // haqiqiylari bilan aralashib ketmasligi kerak.
+  let simTimer: NodeJS.Timeout | null = null;
+  if (config.simulate) {
+    simTimer = startSimulator();
+  } else if (config.isDemo) {
+    log.info("Namoyish uchun sun'iy ma'lumot bilan ko'rmoqchi bo'lsangiz: SIMULATE=true");
+  }
+
   const stream = new PumpPortalStream({
     onNewToken: async (ev) => {
-      await insertToken(ev);
+      await getStore().insertToken(ev);
       log.debug('yangi token', { mint: ev.mint, symbol: ev.symbol });
     },
     onMigration: async (mint) => {
       // Raydium'ga o'tish = bonding curve tugadi. Kuchli omon qolish signali.
       log.info('migratsiya', { mint });
-      await setTokenStatus(mint, 'watching', 'raydium migratsiyasi');
+      await getStore().setTokenStatus(mint, 'watching', 'raydium migratsiyasi');
     },
   });
-  stream.start();
+  if (!config.simulate) stream.start();
 
   const timers = [
     everyMs('screen', config.ticks.screenMs, screenTick),
@@ -94,9 +99,11 @@ async function main(): Promise<void> {
       `Bankroll: ${config.risk.bankrollSol} SOL`,
       `Pozitsiya hajmi: ${config.risk.maxPositionPct}% (${((config.risk.bankrollSol * config.risk.maxPositionPct) / 100).toFixed(4)} SOL)`,
       `Minimal AI ball: ${config.minAiScore}`,
-      killed ? '\n🛑 <b>Kill switch YOQILGAN</b> — /resume bilan o\'chiring' : '',
+      `AI: ${config.capabilities.ai === 'gemini' ? config.gemini.modelFast : 'evristik ballchi'}`,
+      `Baza: ${config.capabilities.database === 'supabase' ? 'Supabase' : 'xotira (vaqtinchalik)'}`,
+      killed ? '\n🛑 <b>Kill switch YOQILGAN</b>' : '',
       '',
-      '/help — buyruqlar',
+      `Dashboard: <code>:${config.web.port}</code>`,
     ]
       .filter(Boolean)
       .join('\n'),
@@ -105,6 +112,7 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     log.info('to\'xtatilmoqda', { signal });
     for (const t of timers) clearInterval(t);
+    if (simTimer) clearInterval(simTimer);
     stream.stop();
     bot.stop();
     setTimeout(() => process.exit(0), 1500);

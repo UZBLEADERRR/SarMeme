@@ -3,12 +3,13 @@ import { createLogger } from '../logger.js';
 import { fetchJson } from '../util/http.js';
 import { sleep } from '../util/rate.js';
 import { isKillSwitchOn, setKillSwitch, snapshot } from '../risk/manager.js';
-import { latestCheck, listOpenPositions, pnlSince } from '../db/repo.js';
-import { getMarketSnapshots } from '../market/dexscreener.js';
+import { getStore } from '../store/index.js';
+import { fetchMarkets } from '../market/prices.js';
+import { addSink, notify } from '../notify.js';
 
 const log = createLogger('telegram');
 
-const API = `https://api.telegram.org/bot${config.telegram.botToken}`;
+const API = `https://api.telegram.org/bot${config.telegram.botToken ?? ''}`;
 
 /** HTML parse_mode uchun matnni xavfsizlantirish. */
 function esc(s: unknown): string {
@@ -18,8 +19,9 @@ function esc(s: unknown): string {
     .replace(/>/g, '&gt;');
 }
 
-/** Xabar yuboradi. Telegram tushib qolsa botni to'xtatmaymiz — faqat log. */
-export async function notify(html: string): Promise<void> {
+/** Telegram'ga yuboradi. Tushib qolsa botni to'xtatmaymiz — faqat log. */
+async function sendTelegram(html: string): Promise<void> {
+  if (!config.capabilities.telegram) return;
   try {
     await fetchJson(
       `${API}/sendMessage`,
@@ -54,6 +56,11 @@ export class TelegramBot {
   private running = false;
 
   start(): void {
+    if (!config.capabilities.telegram) {
+      log.info('Telegram sozlanmagan — xabarlar faqat UI va logda ko\'rinadi');
+      return;
+    }
+    addSink(sendTelegram);
     this.running = true;
     void this.loop();
     log.info('bot ishga tushdi');
@@ -160,10 +167,10 @@ async function statusText(): Promise<string> {
 }
 
 async function positionsText(): Promise<string> {
-  const open = await listOpenPositions();
+  const open = await getStore().listOpenPositions();
   if (open.length === 0) return '<b>Ochiq pozitsiya yo\'q.</b>';
 
-  const markets = await getMarketSnapshots(open.map((p) => p.mint));
+  const markets = await fetchMarkets(open.map((p) => p.mint));
   const lines = ['<b>Ochiq pozitsiyalar</b>', ''];
 
   for (const p of open) {
@@ -186,11 +193,11 @@ async function positionsText(): Promise<string> {
 
 async function pnlText(): Promise<string> {
   const now = new Date();
-  const day = await pnlSince(
+  const day = await getStore().pnlSince(
     new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate())),
   );
-  const week = await pnlSince(new Date(Date.now() - 7 * 86_400_000));
-  const all = await pnlSince(new Date(0));
+  const week = await getStore().pnlSince(new Date(Date.now() - 7 * 86_400_000));
+  const all = await getStore().pnlSince(new Date(0));
 
   const fmt = (v: { realizedSol: number; trades: number }) =>
     `${v.realizedSol >= 0 ? '+' : ''}${v.realizedSol.toFixed(4)} SOL (${v.trades} savdo)`;
@@ -212,11 +219,11 @@ async function pnlText(): Promise<string> {
 async function tokenText(mint: string | undefined): Promise<string> {
   if (!mint) return 'Foydalanish: <code>/token &lt;mint&gt;</code>';
 
-  const check = await latestCheck(mint);
+  const check = await getStore().latestCheck(mint);
   if (!check) return `Bu mint bo'yicha tekshiruv topilmadi:\n<code>${esc(mint)}</code>`;
 
-  const market = (await getMarketSnapshots([mint])).get(mint);
-  const flags = Array.isArray(check.flags) ? (check.flags as string[]) : [];
+  const market = (await fetchMarkets([mint])).get(mint);
+  const flags = check.flags;
 
   return [
     `<b>${esc(mint.slice(0, 12))}…</b>`,
@@ -224,10 +231,10 @@ async function tokenText(mint: string | undefined): Promise<string> {
     `Filtr: ${check.passed ? '✅ o\'tdi' : '❌ o\'tmadi'}`,
     flags.length > 0 ? `Belgilar: ${esc(flags.join(', '))}` : 'Belgilar: yo\'q',
     '',
-    `Likvidlik: $${Number(check.liquidity_usd ?? 0).toFixed(0)}`,
-    `Kapitalizatsiya: $${Number(check.market_cap_usd ?? 0).toFixed(0)}`,
-    `Top-10 ulush: ${check.top10_pct === null ? 'noma\'lum' : `${Number(check.top10_pct).toFixed(1)}%`}`,
-    `Xolderlar: ${check.holder_count ?? 'noma\'lum'}`,
+    `Likvidlik: $${Number(check.liquidityUsd ?? 0).toFixed(0)}`,
+    `Kapitalizatsiya: $${Number(check.marketCapUsd ?? 0).toFixed(0)}`,
+    `Top-10 ulush: ${check.top10Pct === null ? 'noma\'lum' : `${Number(check.top10Pct).toFixed(1)}%`}`,
+    `Xolderlar: ${check.holderCount ?? 'noma\'lum'}`,
     '',
     `Hozirgi narx (SOL): ${market?.priceNativeSol ?? 'noma\'lum'}`,
     `<a href="https://dexscreener.com/solana/${esc(mint)}">DexScreener</a>`,

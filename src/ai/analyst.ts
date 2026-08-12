@@ -1,6 +1,7 @@
 import { config } from '../config.js';
 import { createLogger } from '../logger.js';
 import { generateJson, type GeminiSchema } from './gemini.js';
+import { heuristicScore } from './heuristic.js';
 import type { AiAnalysis, ScreenResult, Verdict } from '../types.js';
 
 const log = createLogger('analyst');
@@ -124,6 +125,13 @@ export async function analyzeBatch(
   items: readonly { screen: ScreenResult; symbol: string | null; name: string | null }[],
 ): Promise<{ analyses: AiAnalysis[]; raw: unknown }> {
   if (items.length === 0) return { analyses: [], raw: null };
+
+  // Gemini kaliti yo'q — ochiq formulali zaxira ballchi ishlatiladi.
+  if (config.capabilities.ai !== 'gemini') {
+    const analyses = items.map((it) => heuristicScore(it.screen));
+    log.info('evristik baholash', { tokens: analyses.length });
+    return { analyses, raw: { engine: 'heuristic' } };
+  }
 
   const blocks = items.map((it, i) => `### Token ${i + 1}\n${describe(it.screen, it.symbol, it.name)}`);
   const prompt = `Quyidagi ${items.length} ta tokenni tahlil qil va har biriga ball qo'y.\n\n${blocks.join('\n\n')}`;
